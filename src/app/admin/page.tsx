@@ -346,12 +346,14 @@ export default function AdminPage() {
               </button>
               <button
                 onClick={async () => {
-                  const res = await login("admin@herbook.in", "Admin@HerBook2026!");
+                  const res = await login("admin@herbook.in", "Admin@HerBook2026");
                   if (res.success) {
                     showNotification("Signed in as Administrator.");
+                  } else {
+                    showNotification(res.error || "Failed to sign in as Administrator.");
                   }
                 }}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 font-semibold text-xs hover:bg-zinc-50 transition-all"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 font-semibold text-xs hover:bg-zinc-50 transition-all cursor-pointer"
               >
                 Quick Demo Admin Login
               </button>
