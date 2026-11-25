@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { recordAuditLog, verifySessionToken } from "@/lib/auth";
 
-export interface ModerationReport {
+interface ModerationReport {
   id: string;
   reporterId: string;
   contentId: string;
@@ -21,7 +21,7 @@ export interface ModerationReport {
   moderatorNotes?: string;
 }
 
-export const moderationQueue: ModerationReport[] = [
+const moderationQueue: ModerationReport[] = [
   {
     id: "rep-101",
     reporterId: "usr-demo-101",

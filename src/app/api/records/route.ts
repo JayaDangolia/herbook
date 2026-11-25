@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifySessionToken, recordAuditLog } from "@/lib/auth";
 
-export interface ServerMedicalRecord {
+interface ServerMedicalRecord {
   id: string;
   userId: string;
   title: string;
