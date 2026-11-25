@@ -17,7 +17,7 @@ import { useApp } from "@/context/AppContext";
 import { formatINR } from "@/lib/utils";
 
 export default function PremiumPage() {
-  const { user, togglePremium, showNotification } = useApp();
+  const { user, togglePremium, showNotification, openAuthModal } = useApp();
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("annual");
 
   const workshops = [
@@ -42,6 +42,10 @@ export default function PremiumPage() {
   ];
 
   const handleSubscribe = () => {
+    if (!user) {
+      openAuthModal("login");
+      return;
+    }
     togglePremium();
     showNotification(
       user.isPremium
@@ -200,7 +204,7 @@ export default function PremiumPage() {
           >
             <CreditCard className="w-4 h-4" />
             <span>
-              {user.isPremium
+              {user?.isPremium
                 ? "Manage / Downgrade Subscription"
                 : `Subscribe for ${billingCycle === "annual" ? "₹799/yr" : "₹99/mo"} (Sandbox)`}
             </span>

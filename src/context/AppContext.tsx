@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { Language, translations, TranslationDictionary } from "@/data/translations";
+import { AuthModal } from "@/components/auth/AuthModal";
 
 export type UserRole =
   | "user"
@@ -15,14 +16,18 @@ export type UserRole =
 export interface UserProfile {
   id: string;
   name: string;
+  username: string;
   email: string;
   role: UserRole;
-  isPremium: boolean;
+  isPremium?: boolean;
   avatarUrl: string;
-  preferredLanguage: Language;
-  privacyMode: boolean; // Conceal sensitive tags in community
-  allowPersonalization: boolean;
-  allowAnalytics: boolean;
+  bio?: string;
+  status?: string;
+  preferredLanguage?: Language;
+  privacyMode?: boolean;
+  allowPersonalization?: boolean;
+  allowAnalytics?: boolean;
+  isEmailVerified?: boolean;
 }
 
 interface AppContextType {
@@ -31,8 +36,17 @@ interface AppContextType {
   t: TranslationDictionary;
   theme: "light" | "dark";
   toggleTheme: () => void;
-  user: UserProfile;
-  setUser: React.Dispatch<React.SetStateAction<UserProfile>>;
+  user: UserProfile | null;
+  setUser: React.Dispatch<React.SetStateAction<UserProfile | null>>;
+  isLoadingAuth: boolean;
+  isAuthModalOpen: boolean;
+  authModalMode: "login" | "register";
+  openAuthModal: (mode?: "login" | "register") => void;
+  closeAuthModal: () => void;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  register: (name: string, username: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  checkSession: () => Promise<void>;
   switchRole: (role: UserRole) => void;
   togglePremium: () => void;
   showEmergencyModal: boolean;
@@ -49,25 +63,19 @@ interface AppContextType {
   showNotification: (msg: string) => void;
 }
 
-const defaultUser: UserProfile = {
-  id: "usr-demo-101",
-  name: "Rhea Deshmukh",
-  email: "rhea.deshmukh@example.com",
-  role: "user",
-  isPremium: false,
-  avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80",
-  preferredLanguage: "en",
-  privacyMode: false,
-  allowPersonalization: true,
-  allowAnalytics: true,
-};
-
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [language, setLanguageState] = useState<Language>("en");
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [user, setUser] = useState<UserProfile>(defaultUser);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [isLoadingAuth, setIsLoadingAuth] = useState<boolean>(true);
+
+  // Auth Modal State
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [authModalMode, setAuthModalMode] = useState<"login" | "register">("login");
+
+  // UI Drawer & Modal States
   const [showEmergencyModal, setShowEmergencyModal] = useState<boolean>(false);
   const [isHubOpen, setIsHubOpen] = useState<boolean>(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
@@ -75,7 +83,45 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [isCreateContentOpen, setIsCreateContentOpen] = useState<boolean>(false);
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
 
-  // Initialize from localStorage if available
+  const openAuthModal = (mode: "login" | "register" = "login") => {
+    setAuthModalMode(mode);
+    setIsAuthModalOpen(true);
+  };
+
+  const closeAuthModal = () => {
+    setIsAuthModalOpen(false);
+  };
+
+  const showNotification = (msg: string) => {
+    setNotificationMessage(msg);
+    setTimeout(() => {
+      setNotificationMessage((cur) => (cur === msg ? null : cur));
+    }, 4000);
+  };
+
+  // Real Database Session Check
+  const checkSession = async () => {
+    try {
+      const res = await fetch("/api/auth/session");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.authenticated && data.user) {
+          setUser({
+            ...data.user,
+            preferredLanguage: data.user.preferredLanguage || "en",
+            isPremium: false,
+          });
+          return;
+        }
+      }
+      setUser(null);
+    } catch {
+      setUser(null);
+    } finally {
+      setIsLoadingAuth(false);
+    }
+  };
+
   useEffect(() => {
     try {
       const savedLang = localStorage.getItem("herbook_lang") as Language;
@@ -92,6 +138,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     } catch {
       // Local storage unavailable
     }
+
+    checkSession();
   }, []);
 
   const setLanguage = (lang: Language) => {
@@ -114,26 +162,78 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // Real Login
+  const login = async (email: string, pass: string) => {
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: pass }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.user) {
+        setUser({
+          ...data.user,
+          preferredLanguage: "en",
+          isPremium: false,
+        });
+        return { success: true };
+      }
+      return { success: false, error: data.message || data.error || "Login failed" };
+    } catch (e: any) {
+      return { success: false, error: "Network error during login" };
+    }
+  };
+
+  // Real Registration
+  const register = async (name: string, username: string, email: string, pass: string) => {
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, username, email, password: pass }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.user) {
+        setUser({
+          ...data.user,
+          preferredLanguage: "en",
+          isPremium: false,
+        });
+        return { success: true };
+      }
+      return { success: false, error: data.message || data.error || "Registration failed" };
+    } catch (e: any) {
+      return { success: false, error: "Network error during registration" };
+    }
+  };
+
+  // Real Logout
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setUser(null);
+      showNotification("You have been logged out.");
+    }
+  };
+
+  // Deprecated client-only switcher: warns and requests real session
   const switchRole = (role: UserRole) => {
-    setUser((prev) => ({ ...prev, role }));
-    showNotification(`Switched role to: ${role.toUpperCase()}`);
+    if (!user) {
+      openAuthModal("login");
+      return;
+    }
+    showNotification(`Role is server-authorized. Your role is '${user.role}'.`);
   };
 
   const togglePremium = () => {
-    setUser((prev) => {
-      const nextPremium = !prev.isPremium;
-      return { ...prev, isPremium: nextPremium };
-    });
-    showNotification(
-      user.isPremium ? "Switched to Free Tier" : "Unlocked HerBook Premium Tier!"
-    );
-  };
-
-  const showNotification = (msg: string) => {
-    setNotificationMessage(msg);
-    setTimeout(() => {
-      setNotificationMessage((cur) => (cur === msg ? null : cur));
-    }, 4000);
+    if (!user) {
+      openAuthModal("login");
+      return;
+    }
+    setUser((prev) => (prev ? { ...prev, isPremium: !prev.isPremium } : null));
+    showNotification("HerBook Premium Tier toggled for current session.");
   };
 
   const t = translations[language];
@@ -148,6 +248,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         toggleTheme,
         user,
         setUser,
+        isLoadingAuth,
+        isAuthModalOpen,
+        authModalMode,
+        openAuthModal,
+        closeAuthModal,
+        login,
+        register,
+        logout,
+        checkSession,
         switchRole,
         togglePremium,
         showEmergencyModal,
@@ -165,6 +274,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }}
     >
       {children}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={closeAuthModal}
+        initialMode={authModalMode}
+      />
     </AppContext.Provider>
   );
 };

@@ -22,7 +22,7 @@ import { useApp } from "@/context/AppContext";
 
 export default function RecordsPage() {
   const { records, uploadRecord, toggleRecordSharing, deleteRecord, doctors } = useCare();
-  const { showNotification } = useApp();
+  const { user, openAuthModal, showNotification, isLoadingAuth } = useApp();
 
   const [isUploading, setIsUploading] = useState(false);
   const [docTitle, setDocTitle] = useState("");
@@ -152,6 +152,38 @@ export default function RecordsPage() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [showErasureModal]);
+
+  if (isLoadingAuth) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-2 border-brand-rose border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-16 text-center space-y-5 animate-fadeIn">
+        <div className="w-16 h-16 rounded-full bg-brand-rose/10 text-brand-rose flex items-center justify-center mx-auto">
+          <Lock className="w-8 h-8" />
+        </div>
+        <div className="space-y-1.5">
+          <h2 className="text-xl font-extrabold text-zinc-900 dark:text-white font-display">
+            Encrypted Health Records Vault
+          </h2>
+          <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+            Authentication is strictly required under Section 12 of the DPDP Act 2023 to protect sensitive medical scans, ultrasound reports, and clinical prescriptions.
+          </p>
+        </div>
+        <button
+          onClick={() => openAuthModal("login")}
+          className="px-6 py-3 rounded-2xl bg-gradient-to-r from-brand-rose to-brand-plum text-white font-bold text-xs shadow-soft hover:shadow-glow transition-all cursor-pointer"
+        >
+          Sign In to Access Vault
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 animate-fadeIn pb-24">

@@ -1,69 +1,31 @@
 import { NextResponse } from "next/server";
 import { verifySessionToken, recordAuditLog } from "@/lib/auth";
-
-interface ServerMedicalRecord {
-  id: string;
-  userId: string;
-  title: string;
-  type: "Lab Report" | "Ultrasound Scan" | "Prescription" | "Clinical Note";
-  date: string;
-  fileUrl: string;
-  fileSize: string;
-  sharedWithDoctorIds: string[];
-  notes?: string;
-  createdAt: string;
-}
-
-// In-memory record store representing encrypted database
-let serverRecords: ServerMedicalRecord[] = [
-  {
-    id: "rec-1",
-    userId: "usr-demo-101",
-    title: "Pelvic Ultrasound Report - Bilateral Ovaries",
-    type: "Ultrasound Scan",
-    date: "2026-09-28",
-    fileUrl: "/api/records/rec-1/file",
-    fileSize: "2.4 MB (PDF)",
-    sharedWithDoctorIds: ["doc-allo-1"],
-    notes: "Normal endometrial thickness. 8-10 peripheral follicles noted.",
-    createdAt: "2026-09-28T10:00:00.000Z",
-  },
-  {
-    id: "rec-2",
-    userId: "usr-demo-101",
-    title: "Thyroid & Lipid Profile Panel (HOMA-IR)",
-    type: "Lab Report",
-    date: "2026-09-10",
-    fileUrl: "/api/records/rec-2/file",
-    fileSize: "1.1 MB (PDF)",
-    sharedWithDoctorIds: [],
-    notes: "Fasting insulin slightly elevated; TSH within normal limits (2.1 mIU/L).",
-    createdAt: "2026-09-10T11:30:00.000Z",
-  },
-];
+import { db } from "@/lib/db";
 
 export async function GET(request: Request) {
-  const cookieHeader = request.headers.get("cookie") || "";
-  const match = cookieHeader.match(/herbook_session=([^;]+)/);
-  const token = match ? match[1] : null;
+  try {
+    const cookieHeader = request.headers.get("cookie") || "";
+    const match = cookieHeader.match(/herbook_session=([^;]+)/);
+    const token = match ? match[1] : null;
 
-  // Default to demo user for client hydration if no token, otherwise authenticate
-  let currentUserId = "usr-demo-101";
-  if (token) {
-    const session = await verifySessionToken(token);
-    if (session) {
-      currentUserId = session.id;
+    if (!token) {
+      return NextResponse.json(
+        { error: "Authentication required to access Health Records Vault.", records: [] },
+        { status: 401 }
+      );
     }
+
+    const session = await verifySessionToken(token);
+    if (!session) {
+      return NextResponse.json({ error: "Invalid session", records: [] }, { status: 401 });
+    }
+
+    // Filter records strictly by authenticated userId (IDOR Prevention)
+    const records = await db.healthRecords.findByUserId(session.id);
+    return NextResponse.json({ success: true, records });
+  } catch (err) {
+    return NextResponse.json({ error: "Failed to load health records", records: [] }, { status: 500 });
   }
-
-  // Filter records strictly by authenticated userId (IDOR Prevention)
-  const userRecords = serverRecords.filter((r) => r.userId === currentUserId);
-
-  return NextResponse.json({
-    success: true,
-    count: userRecords.length,
-    records: userRecords,
-  });
 }
 
 export async function POST(request: Request) {
@@ -72,56 +34,86 @@ export async function POST(request: Request) {
     const match = cookieHeader.match(/herbook_session=([^;]+)/);
     const token = match ? match[1] : null;
 
-    let currentUserId = "usr-demo-101";
-    let currentUserRole: any = "user";
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    if (token) {
-      const session = await verifySessionToken(token);
-      if (session) {
-        currentUserId = session.id;
-        currentUserRole = session.role;
-      }
+    const session = await verifySessionToken(token);
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
-    const { title, type, date, notes, fileSize } = body;
+    const { title, type, date, notes } = body;
 
     if (!title || !type) {
-      return NextResponse.json(
-        { error: "Validation Error", message: "Title and document type are required." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Title and document type are required" }, { status: 400 });
     }
 
-    const newRecord: ServerMedicalRecord = {
-      id: `rec-${Date.now()}`,
-      userId: currentUserId,
+    const newRecord = await db.healthRecords.create({
+      userId: session.id,
       title: title.trim(),
-      type,
+      type: type,
       date: date || new Date().toISOString().split("T")[0],
-      fileUrl: `/api/records/rec-${Date.now()}/file`,
-      fileSize: fileSize || "1.5 MB (Encrypted PDF)",
+      fileUrl: `/api/records/vault-${Date.now()}/file`,
+      fileSize: "1.8 MB (PDF)",
       sharedWithDoctorIds: [],
-      notes: notes?.trim() || "",
-      createdAt: new Date().toISOString(),
-    };
-
-    serverRecords.unshift(newRecord);
-
-    recordAuditLog({
-      actorId: currentUserId,
-      actorRole: currentUserRole,
-      action: "MEDICAL_RECORD_UPLOAD",
-      targetId: newRecord.id,
-      targetType: "MedicalRecord",
-      details: `Medical record '${newRecord.title}' (${newRecord.type}) encrypted and stored in private vault.`,
+      notes: notes || "",
     });
 
-    return NextResponse.json(
-      { success: true, record: newRecord, message: "Record saved to encrypted Health Vault." },
-      { status: 201 }
-    );
-  } catch (err: any) {
-    return NextResponse.json({ error: "Internal Error", message: err.message }, { status: 500 });
+    recordAuditLog({
+      actorId: session.id,
+      actorRole: session.role,
+      action: "HEALTH_RECORD_UPLOADED",
+      targetId: newRecord.id,
+      targetType: "health_record",
+      details: `Medical document '${newRecord.title}' (${newRecord.type}) uploaded to encrypted vault.`,
+    });
+
+    return NextResponse.json({ success: true, record: newRecord }, { status: 201 });
+  } catch (err) {
+    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const cookieHeader = request.headers.get("cookie") || "";
+    const match = cookieHeader.match(/herbook_session=([^;]+)/);
+    const token = match ? match[1] : null;
+
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const session = await verifySessionToken(token);
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const url = new URL(request.url);
+    const recordId = url.searchParams.get("id");
+
+    if (!recordId) {
+      return NextResponse.json({ error: "Record ID is required" }, { status: 400 });
+    }
+
+    const deleted = await db.healthRecords.delete(recordId, session.id);
+    if (!deleted) {
+      return NextResponse.json({ error: "Record not found or access denied" }, { status: 404 });
+    }
+
+    recordAuditLog({
+      actorId: session.id,
+      actorRole: session.role,
+      action: "HEALTH_RECORD_DELETED",
+      targetId: recordId,
+      targetType: "health_record",
+      details: `Document deleted under DPDP Right to Erasure.`,
+    });
+
+    return NextResponse.json({ success: true, message: "Record deleted permanently." });
+  } catch (err) {
+    return NextResponse.json({ error: "Failed to delete record" }, { status: 500 });
   }
 }

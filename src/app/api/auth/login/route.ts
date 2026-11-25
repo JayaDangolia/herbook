@@ -1,32 +1,11 @@
 import { NextResponse } from "next/server";
-import { createSessionToken, recordAuditLog, UserRole } from "@/lib/auth";
-
-// Known demonstration pilot accounts for testing
-const DEMO_ACCOUNTS: Record<string, { id: string; name: string; role: UserRole; pass: string }> = {
-  "rhea@example.com": {
-    id: "usr-demo-101",
-    name: "Rhea Deshmukh",
-    role: "user",
-    pass: "HerBook@2026",
-  },
-  "doctor@herbook.in": {
-    id: "doc-allo-1",
-    name: "Dr. Ananya Sharma",
-    role: "doctor",
-    pass: "DoctorCare@2026",
-  },
-  "admin@herbook.in": {
-    id: "admin-herbook-1",
-    name: "Pooja Varma (Clinical Admin)",
-    role: "admin",
-    pass: "AdminSecret#2026",
-  },
-};
+import { createSessionToken, recordAuditLog } from "@/lib/auth";
+import { db, verifyPassword } from "@/lib/db";
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, password, mfaCode } = body;
+    const { email, password } = body;
 
     if (!email || !password) {
       return NextResponse.json(
@@ -36,72 +15,88 @@ export async function POST(request: Request) {
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    const account = DEMO_ACCOUNTS[cleanEmail];
+    const user = await db.users.findByEmail(cleanEmail);
 
-    // Password validation
-    if (!account || account.pass !== password) {
-      recordAuditLog({
-        actorId: "anonymous",
-        actorRole: "user",
-        action: "AUTH_LOGIN_FAILED",
-        details: `Failed login attempt for email: ${cleanEmail}`,
-      });
-
+    if (!user) {
       return NextResponse.json(
-        { error: "Invalid Credentials", message: "Incorrect email or password." },
+        { error: "Authentication Failed", message: "Invalid email or password." },
         { status: 401 }
       );
     }
 
-    // Role-based Multi-Factor Authentication requirement for Doctors and Admins
-    const requiresMfa = account.role === "admin" || account.role === "doctor";
-    const isMfaProvided = mfaCode === "123456" || !requiresMfa;
-
-    if (requiresMfa && !isMfaProvided) {
+    if (user.status === "suspended") {
       return NextResponse.json(
         {
-          requiresMfa: true,
-          message: "MFA challenge required. Please provide the 6-digit TOTP verification code.",
+          error: "Account Suspended",
+          message: "Your HerBook account has been suspended for safety or policy review. Please contact support@herbook.in.",
         },
-        { status: 200 }
+        { status: 403 }
       );
     }
 
-    const sessionUser = {
-      id: account.id,
-      name: account.name,
-      email: cleanEmail,
-      role: account.role,
-      isMfaVerified: requiresMfa,
-    };
+    const isMatch = verifyPassword(password, user.passwordHash, user.salt);
+    if (!isMatch) {
+      recordAuditLog({
+        actorId: user.id,
+        actorRole: user.role,
+        action: "AUTH_LOGIN_FAILED",
+        targetId: user.id,
+        targetType: "user",
+        details: `Failed password login attempt for ${user.email}.`,
+      });
 
-    const token = await createSessionToken(sessionUser);
+      return NextResponse.json(
+        { error: "Authentication Failed", message: "Invalid email or password." },
+        { status: 401 }
+      );
+    }
+
+    const token = await createSessionToken({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isMfaVerified: false,
+    });
 
     recordAuditLog({
-      actorId: account.id,
-      actorRole: account.role,
+      actorId: user.id,
+      actorRole: user.role,
       action: "AUTH_LOGIN_SUCCESS",
-      details: `Successful authenticated login for ${account.name} (${account.role}). MFA Verified: ${requiresMfa}`,
+      targetId: user.id,
+      targetType: "user",
+      details: `User @${user.username} logged in successfully.`,
     });
 
     const response = NextResponse.json({
       success: true,
-      user: sessionUser,
-      message: "Authentication successful.",
+      message: "Login successful.",
+      user: {
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        avatarUrl: user.avatarUrl,
+        bio: user.bio,
+        status: user.status,
+        isEmailVerified: user.isEmailVerified,
+      },
     });
 
     response.cookies.set("herbook_session", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 86400,
+      maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
     });
 
     return response;
   } catch (err: any) {
+    console.error("Login error:", err);
     return NextResponse.json(
-      { error: "Internal Server Error", message: err.message },
+      { error: "Login Error", message: "Could not process login. Please try again." },
       { status: 500 }
     );
   }

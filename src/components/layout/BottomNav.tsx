@@ -113,14 +113,22 @@ export const BottomNav = () => {
           }`}
         >
           <div className="relative">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={user.avatarUrl}
-              alt={user.name}
-              className={`w-5 h-5 rounded-full object-cover transition-all ${
-                isProfile ? "ring-2 ring-brand-rose ring-offset-1 dark:ring-offset-zinc-900 scale-105" : "opacity-80"
-              }`}
-            />
+            {user?.avatarUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={user.avatarUrl}
+                alt={user.name}
+                className={`w-5 h-5 rounded-full object-cover transition-all ${
+                  isProfile ? "ring-2 ring-brand-rose ring-offset-1 dark:ring-offset-zinc-900 scale-105" : "opacity-80"
+                }`}
+              />
+            ) : (
+              <User
+                className={`w-5 h-5 transition-all ${
+                  isProfile ? "text-brand-plum dark:text-brand-rose scale-105" : "opacity-80"
+                }`}
+              />
+            )}
           </div>
           <span className={`text-[10px] mt-0.5 ${isProfile ? "font-bold text-brand-plum dark:text-brand-rose" : "font-medium"}`}>
             Profile

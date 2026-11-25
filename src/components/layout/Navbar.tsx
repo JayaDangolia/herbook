@@ -21,8 +21,10 @@ import {
   Activity,
   Menu,
   X,
+  LogIn,
+  ShieldCheck,
 } from "lucide-react";
-import { useApp, UserRole } from "@/context/AppContext";
+import { useApp } from "@/context/AppContext";
 
 export const Navbar = () => {
   const pathname = usePathname();
@@ -33,9 +35,9 @@ export const Navbar = () => {
     theme,
     toggleTheme,
     user,
-    switchRole,
     setShowEmergencyModal,
     togglePremium,
+    openAuthModal,
   } = useApp();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -66,7 +68,7 @@ export const Navbar = () => {
                 <span className="font-display font-extrabold text-xl tracking-tight text-brand-plum dark:text-brand-rose-light">
                   HerBook
                 </span>
-                {user.isPremium && (
+                {user?.isPremium && (
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gradient-to-r from-amber-400 to-amber-600 text-white shadow-xs">
                     <Crown className="w-2.5 h-2.5 mr-0.5" /> PLUS
                   </span>
@@ -145,66 +147,56 @@ export const Navbar = () => {
               {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-amber-400" />}
             </button>
 
-            {/* Role Demo Switcher (Crucial for testing Doctor Portal vs Admin vs User) */}
-            <div className="relative">
+            {/* User Account / Navigation Controls */}
+            {user ? (
+              <div className="flex items-center space-x-2">
+                {(user.role === "admin" || user.role === "superadmin") && (
+                  <Link
+                    href="/admin"
+                    className="hidden md:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-xs font-bold hover:bg-purple-100 transition-colors"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>Admin</span>
+                  </Link>
+                )}
+                {user.role === "doctor" && (
+                  <Link
+                    href="/doctor-portal"
+                    className="hidden md:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold hover:bg-blue-100 transition-colors"
+                  >
+                    <span>Doctor Hub</span>
+                  </Link>
+                )}
+
+                {/* Profile Avatar */}
+                <Link
+                  href="/profile"
+                  className="flex items-center space-x-1.5 p-1 rounded-full border-2 border-brand-rose/40 hover:border-brand-rose transition-colors"
+                  title={`@${user.username} (${user.name})`}
+                >
+                  {user.avatarUrl ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={user.avatarUrl}
+                      alt={user.name}
+                      className="w-8 h-8 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-brand-blush dark:bg-brand-plum/40 text-brand-plum dark:text-brand-rose font-bold text-xs flex items-center justify-center">
+                      {user.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                </Link>
+              </div>
+            ) : (
               <button
-                onClick={() => setRoleMenuOpen(!roleMenuOpen)}
-                className="hidden md:flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800"
+                onClick={() => openAuthModal("login")}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-brand-rose to-brand-plum text-white font-bold text-xs shadow-soft hover:opacity-95 transition-all cursor-pointer"
               >
-                <span className="text-[10px] uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Role:</span>
-                <span className="capitalize text-brand-plum dark:text-brand-rose font-bold">{user.role}</span>
-                <ChevronDown className="w-3 h-3 ml-0.5 text-zinc-400" />
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Sign In</span>
               </button>
-
-              {roleMenuOpen && (
-                <div className="absolute right-0 mt-2 w-52 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl py-2 z-50 text-xs animate-fadeIn">
-                  <div className="px-3 py-1.5 text-[11px] font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider border-b border-zinc-100 dark:border-zinc-800">
-                    Switch Test Persona
-                  </div>
-                  {(["user", "doctor", "admin"] as UserRole[]).map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => {
-                        switchRole(r);
-                        setRoleMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
-                        user.role === r ? "font-bold text-brand-plum dark:text-brand-rose bg-brand-blush/40 dark:bg-brand-plum/20" : "text-zinc-700 dark:text-zinc-300"
-                      }`}
-                    >
-                      <span className="capitalize">{r === "user" ? "Patient / Regular User" : r === "doctor" ? "Verified Doctor Portal" : "Admin Dashboard"}</span>
-                      {user.role === r && <span className="w-1.5 h-1.5 rounded-full bg-brand-rose" />}
-                    </button>
-                  ))}
-                  <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1 pt-1 px-2">
-                    <button
-                      onClick={() => {
-                        togglePremium();
-                        setRoleMenuOpen(false);
-                      }}
-                      className="w-full text-left px-2 py-1.5 rounded-lg text-amber-600 dark:text-amber-400 font-medium hover:bg-amber-50 dark:hover:bg-amber-950/30 flex items-center gap-1.5"
-                    >
-                      <Crown className="w-3.5 h-3.5" />
-                      {user.isPremium ? "Disable Premium Mode" : "Simulate Premium Unlock"}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Profile Avatar / Portal Link */}
-            <Link
-              href="/profile"
-              className="flex items-center space-x-1.5 p-1 rounded-full border-2 border-brand-rose/40 hover:border-brand-rose transition-colors"
-              title="Profile & Privacy"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={user.avatarUrl}
-                alt={user.name}
-                className="w-8 h-8 rounded-full object-cover"
-              />
-            </Link>
+            )}
 
             {/* Mobile Hamburger Toggle */}
             <button

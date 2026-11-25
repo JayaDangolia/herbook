@@ -133,7 +133,7 @@ export const CycleAnalyticsCharts = () => {
       </div>
 
       {/* Premium Analytics Preview / Locked Feature */}
-      {!user.isPremium ? (
+      {!user?.isPremium ? (
         <div className="p-5 rounded-2xl bg-gradient-to-r from-brand-blush to-brand-lavender/20 dark:from-zinc-800 dark:to-brand-plum/30 border border-brand-rose/30 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center space-x-3 text-center sm:text-left">
             <div className="w-10 h-10 rounded-2xl bg-amber-400 text-amber-950 flex items-center justify-center shrink-0">

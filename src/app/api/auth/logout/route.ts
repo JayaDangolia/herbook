@@ -13,12 +13,26 @@ export async function POST(request: Request) {
         actorId: session.id,
         actorRole: session.role,
         action: "AUTH_LOGOUT",
-        details: `User session terminated cleanly for ${session.email}`,
+        targetId: session.id,
+        targetType: "user",
+        details: `User ${session.email} logged out cleanly.`,
       });
     }
   }
 
-  const response = NextResponse.json({ success: true, message: "Logged out successfully" });
-  response.cookies.delete("herbook_session");
+  const response = NextResponse.json({
+    success: true,
+    message: "Logged out successfully.",
+  });
+
+  // Expire cookie
+  response.cookies.set("herbook_session", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    expires: new Date(0),
+    path: "/",
+  });
+
   return response;
 }

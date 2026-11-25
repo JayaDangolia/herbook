@@ -6,6 +6,7 @@ import {
   calculateCyclePredictions,
   PredictionResult,
 } from "@/lib/cycleMath";
+import { useApp } from "./AppContext";
 
 export type { PeriodEntry, PredictionResult };
 
@@ -31,62 +32,17 @@ export interface ReminderSetting {
 
 interface CycleContextType {
   periods: PeriodEntry[];
-  addPeriod: (entry: Omit<PeriodEntry, "id">) => void;
+  addPeriod: (entry: Omit<PeriodEntry, "id">) => Promise<void>;
   updatePeriod: (id: string, entry: Partial<PeriodEntry>) => void;
-  deletePeriod: (id: string) => void;
+  deletePeriod: (id: string) => Promise<void>;
   predictions: PredictionResult;
   dailyLogs: Record<string, DailySymptomLog>;
   saveDailyLog: (log: DailySymptomLog) => void;
   reminders: ReminderSetting[];
   toggleReminder: (id: string) => void;
   addReminder: (rem: Omit<ReminderSetting, "id">) => void;
+  isLoadingPeriods: boolean;
 }
-
-// Realistic initial sample periods for Indian user demo
-const initialPeriods: PeriodEntry[] = [
-  {
-    id: "p-1",
-    startDate: "2026-09-20",
-    endDate: "2026-09-24",
-    flowIntensity: "medium",
-    symptoms: ["Cramps", "Bloating"],
-    notes: "Day 2 cramps relieved with warm herbal tea.",
-  },
-  {
-    id: "p-2",
-    startDate: "2026-08-23",
-    endDate: "2026-08-27",
-    flowIntensity: "medium",
-    symptoms: ["Headache", "Fatigue"],
-    notes: "Slight headache on day 1.",
-  },
-  {
-    id: "p-3",
-    startDate: "2026-07-26",
-    endDate: "2026-07-30",
-    flowIntensity: "heavy",
-    symptoms: ["Cramps", "Mood Swings"],
-  },
-  {
-    id: "p-4",
-    startDate: "2026-06-28",
-    endDate: "2026-07-02",
-    flowIntensity: "medium",
-    symptoms: ["Bloating"],
-  },
-];
-
-const initialDailyLogs: Record<string, DailySymptomLog> = {
-  "2026-10-15": {
-    date: "2026-10-15",
-    symptoms: ["Mild Cramps", "Bloating"],
-    severity: "mild",
-    mood: "Reflective",
-    notes: "Luteal phase energy dip. Took a gentle walk.",
-    waterIntakeGlasses: 8,
-    sleepHours: 7.5,
-  },
-};
 
 const initialReminders: ReminderSetting[] = [
   {
@@ -104,96 +60,120 @@ const initialReminders: ReminderSetting[] = [
     time: "08:30 PM",
     enabled: true,
   },
-  {
-    id: "rem-3",
-    title: "Myo-Inositol & Vitamin D3 Reminder",
-    type: "medication",
-    time: "10:00 AM",
-    enabled: false,
-    notes: "Post-breakfast supplement",
-  },
 ];
 
 const CycleContext = createContext<CycleContextType | undefined>(undefined);
 
 export const CycleProvider = ({ children }: { children: ReactNode }) => {
-  const [periods, setPeriods] = useState<PeriodEntry[]>(initialPeriods);
-  const [dailyLogs, setDailyLogs] = useState<Record<string, DailySymptomLog>>(initialDailyLogs);
+  const { user } = useApp();
+  const [periods, setPeriods] = useState<PeriodEntry[]>([]);
+  const [dailyLogs, setDailyLogs] = useState<Record<string, DailySymptomLog>>({});
   const [reminders, setReminders] = useState<ReminderSetting[]>(initialReminders);
+  const [isLoadingPeriods, setIsLoadingPeriods] = useState<boolean>(true);
 
+  // Sync periods with persistent database based on authenticated user
   useEffect(() => {
-    try {
-      const savedPeriods = localStorage.getItem("herbook_periods");
-      if (savedPeriods) setPeriods(JSON.parse(savedPeriods));
+    async function loadUserPeriods() {
+      setIsLoadingPeriods(true);
+      if (!user) {
+        setPeriods([]);
+        setIsLoadingPeriods(false);
+        return;
+      }
 
-      const savedLogs = localStorage.getItem("herbook_daily_logs");
-      if (savedLogs) setDailyLogs(JSON.parse(savedLogs));
+      try {
+        const res = await fetch("/api/cycle/periods");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.periods) {
+            const formatted = data.periods.map((p: any) => ({
+              id: p.id,
+              startDate: p.startDate,
+              endDate: p.endDate,
+              flowIntensity: p.flow,
+              symptoms: p.symptoms || [],
+              notes: p.notes,
+            }));
+            setPeriods(formatted);
+            setIsLoadingPeriods(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Error loading periods from API:", err);
+      }
 
-      const savedReminders = localStorage.getItem("herbook_reminders");
-      if (savedReminders) setReminders(JSON.parse(savedReminders));
-    } catch {}
-  }, []);
+      setPeriods([]);
+      setIsLoadingPeriods(false);
+    }
 
-  const savePeriodsToStorage = (newPeriods: PeriodEntry[]) => {
-    setPeriods(newPeriods);
-    try {
-      localStorage.setItem("herbook_periods", JSON.stringify(newPeriods));
-    } catch {}
-  };
+    loadUserPeriods();
+  }, [user]);
 
-  const addPeriod = (entry: Omit<PeriodEntry, "id">) => {
-    const newEntry: PeriodEntry = {
-      ...entry,
-      id: `period-${Date.now()}`,
-    };
-    const updated = [newEntry, ...periods];
-    savePeriodsToStorage(updated);
+  const addPeriod = async (entry: Omit<PeriodEntry, "id">) => {
+    // Optimistic local update
+    const tempId = `temp-${Date.now()}`;
+    const newEntry: PeriodEntry = { ...entry, id: tempId };
+    setPeriods((prev) => [newEntry, ...prev]);
+
+    if (user) {
+      try {
+        const res = await fetch("/api/cycle/periods", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            startDate: entry.startDate,
+            endDate: entry.endDate,
+            flow: entry.flowIntensity,
+            symptoms: entry.symptoms,
+            notes: entry.notes,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.period) {
+            setPeriods((prev) =>
+              prev.map((p) => (p.id === tempId ? { ...p, id: data.period.id } : p))
+            );
+          }
+        }
+      } catch (e) {
+        console.error("Failed to save period to database:", e);
+      }
+    }
   };
 
   const updatePeriod = (id: string, entry: Partial<PeriodEntry>) => {
-    const updated = periods.map((p) => (p.id === id ? { ...p, ...entry } : p));
-    savePeriodsToStorage(updated);
+    setPeriods((prev) => prev.map((p) => (p.id === id ? { ...p, ...entry } : p)));
   };
 
-  const deletePeriod = (id: string) => {
-    const updated = periods.filter((p) => p.id !== id);
-    savePeriodsToStorage(updated);
+  const deletePeriod = async (id: string) => {
+    setPeriods((prev) => prev.filter((p) => p.id !== id));
+    if (user) {
+      try {
+        await fetch(`/api/cycle/periods?id=${id}`, { method: "DELETE" });
+      } catch (e) {
+        console.error("Failed to delete period from database:", e);
+      }
+    }
   };
 
   const saveDailyLog = (log: DailySymptomLog) => {
-    setDailyLogs((prev) => {
-      const next = { ...prev, [log.date]: log };
-      try {
-        localStorage.setItem("herbook_daily_logs", JSON.stringify(next));
-      } catch {}
-      return next;
-    });
+    setDailyLogs((prev) => ({ ...prev, [log.date]: log }));
   };
 
   const toggleReminder = (id: string) => {
-    setReminders((prev) => {
-      const next = prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r));
-      try {
-        localStorage.setItem("herbook_reminders", JSON.stringify(next));
-      } catch {}
-      return next;
-    });
+    setReminders((prev) => prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r)));
   };
 
   const addReminder = (rem: Omit<ReminderSetting, "id">) => {
-    const nextItem: ReminderSetting = { ...rem, id: `rem-${Date.now()}` };
-    setReminders((prev) => {
-      const next = [...prev, nextItem];
-      try {
-        localStorage.setItem("herbook_reminders", JSON.stringify(next));
-      } catch {}
-      return next;
-    });
+    const newRem: ReminderSetting = { ...rem, id: `rem-${Date.now()}` };
+    setReminders((prev) => [...prev, newRem]);
   };
 
-  // Recalculate predictions whenever periods change
-  const predictions = useMemo(() => {
-    return calculateCyclePredictions(periods, new Date(2026, 9, 16));
+  // Run scientific cycle calculations with clinical uncertainty
+  const predictions: PredictionResult = useMemo(() => {
+    return calculateCyclePredictions(periods);
   }, [periods]);
 
   return (
@@ -209,6 +189,7 @@ export const CycleProvider = ({ children }: { children: ReactNode }) => {
         reminders,
         toggleReminder,
         addReminder,
+        isLoadingPeriods,
       }}
     >
       {children}

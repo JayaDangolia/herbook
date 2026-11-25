@@ -1,10 +1,16 @@
 export interface SocialComment {
   id: string;
-  username: string;
-  avatar: string;
+  username?: string;
+  avatar?: string;
   text: string;
   timestamp: string;
   likes: number;
+  authorName?: string;
+  authorHandle?: string;
+  authorAvatar?: string;
+  isDoctor?: boolean;
+  hasLiked?: boolean;
+  replies?: SocialComment[];
 }
 
 export interface SocialPost {

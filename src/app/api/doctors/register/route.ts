@@ -1,21 +1,31 @@
 import { NextResponse } from "next/server";
-import { getFeatureFlags } from "@/lib/featureFlags";
-import { recordAuditLog } from "@/lib/auth";
-import { DoctorApplication, doctorApplicationsQueue } from "@/lib/doctorStore";
+import { recordAuditLog, verifySessionToken } from "@/lib/auth";
+import { db } from "@/lib/db";
+
+export async function GET(request: Request) {
+  try {
+    const cookieHeader = request.headers.get("cookie") || "";
+    const match = cookieHeader.match(/herbook_session=([^;]+)/);
+    const token = match ? match[1] : null;
+
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const session = await verifySessionToken(token);
+    if (!session || (session.role !== "admin" && session.role !== "superadmin")) {
+      return NextResponse.json({ error: "Forbidden: Admin credentials required" }, { status: 403 });
+    }
+
+    const applications = await db.doctorApplications.findAll();
+    return NextResponse.json({ success: true, applications });
+  } catch (err) {
+    return NextResponse.json({ error: "Failed to fetch applications" }, { status: 500 });
+  }
+}
 
 export async function POST(request: Request) {
   try {
-    const flags = getFeatureFlags();
-    if (!flags.doctorSelfOnboarding) {
-      return NextResponse.json(
-        {
-          error: "Doctor Onboarding Gate Active",
-          message: "Doctor self-onboarding is currently disabled by administrative release gate.",
-        },
-        { status: 403 }
-      );
-    }
-
     const body = await request.json();
     const {
       legalName,
@@ -42,14 +52,24 @@ export async function POST(request: Request) {
       );
     }
 
-    const newApplication: DoctorApplication = {
-      id: `app-doc-${Date.now()}`,
+    // Check session if doctor is logged in
+    const cookieHeader = request.headers.get("cookie") || "";
+    const match = cookieHeader.match(/herbook_session=([^;]+)/);
+    const token = match ? match[1] : null;
+    let userId: string | undefined = undefined;
+    if (token) {
+      const session = await verifySessionToken(token);
+      if (session) userId = session.id;
+    }
+
+    const newApplication = await db.doctorApplications.create({
+      userId,
       legalName: legalName.trim(),
       email: email.toLowerCase().trim(),
       phone: phone || "",
       gender: gender || "female",
-      medicalSystem: medicalSystem || "allopathy",
-      registeringCouncil: registeringCouncil || "Delhi Medical Council",
+      medicalSystem: medicalSystem || "Allopathy",
+      registeringCouncil: registeringCouncil || "State Medical Council",
       registrationNumber: registrationNumber.trim(),
       registrationYear: registrationYear || "2020",
       qualification: qualification.trim(),
@@ -59,34 +79,30 @@ export async function POST(request: Request) {
       languages: languages || ["English", "Hindi"],
       certificateFileName: certificateFileName || "uploaded_cert.pdf",
       identityFileName: identityFileName || "uploaded_id.pdf",
-      status: "Under Review",
-      submittedAt: new Date().toISOString(),
-    };
-
-    doctorApplicationsQueue.unshift(newApplication);
+    });
 
     recordAuditLog({
-      actorId: newApplication.id,
+      actorId: userId || "unregistered-clinician",
       actorRole: "doctor",
-      action: "DOCTOR_APPLICATION_SUBMITTED",
-      details: `New doctor verification application submitted by ${newApplication.legalName} (${newApplication.medicalSystem}) - Reg: ${newApplication.registrationNumber} (${newApplication.registeringCouncil})`,
+      action: "DOCTOR_ONBOARDING_APPLICATION_SUBMITTED",
+      targetId: newApplication.id,
+      targetType: "DoctorApplication",
+      details: `Dr. ${newApplication.legalName} (${newApplication.registrationNumber}, ${newApplication.registeringCouncil}) submitted registration for clinical verification.`,
     });
 
-    return NextResponse.json({
-      success: true,
-      applicationId: newApplication.id,
-      status: newApplication.status,
-      message: "Credentials submitted into Clinical Verification Queue.",
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        message: "Your clinician application has been securely submitted for administrative credential verification.",
+        applicationId: newApplication.id,
+      },
+      { status: 201 }
+    );
   } catch (err: any) {
-    return NextResponse.json({ error: "Internal Error", message: err.message }, { status: 500 });
+    console.error("Doctor registration error:", err);
+    return NextResponse.json(
+      { error: "Submission Error", message: "Could not submit doctor application. Please try again." },
+      { status: 500 }
+    );
   }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    success: true,
-    count: doctorApplicationsQueue.length,
-    applications: doctorApplicationsQueue,
-  });
 }

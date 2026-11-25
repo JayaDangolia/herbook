@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { recordAuditLog, verifySessionToken } from "@/lib/auth";
-import { doctorApplicationsQueue } from "@/lib/doctorStore";
+import { db } from "@/lib/db";
 
 export async function POST(request: Request) {
   try {
@@ -8,16 +8,19 @@ export async function POST(request: Request) {
     const match = cookieHeader.match(/herbook_session=([^;]+)/);
     const token = match ? match[1] : null;
 
-    let actor: { id: string; name: string; role: any } = {
-      id: "admin-herbook-1",
-      name: "Pooja Varma (Clinical Admin)",
-      role: "admin",
-    };
-    if (token) {
-      const session = await verifySessionToken(token);
-      if (session) {
-        actor = session;
-      }
+    if (!token) {
+      return NextResponse.json(
+        { error: "Unauthorized", message: "Admin authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const session = await verifySessionToken(token);
+    if (!session || (session.role !== "admin" && session.role !== "superadmin")) {
+      return NextResponse.json(
+        { error: "Forbidden", message: "Only authorized administrators may review doctor credentials." },
+        { status: 403 }
+      );
     }
 
     const body = await request.json();
@@ -30,27 +33,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Valid state transitions
-    const validStatuses = [
-      "Applied",
-      "Documents Submitted",
-      "Under Review",
-      "Verified",
-      "Rejected",
-      "More Information Required",
-      "Active",
-      "Suspended",
-    ];
-
-    if (!validStatuses.includes(status)) {
-      return NextResponse.json(
-        { error: "Invalid Status", message: `Status must be one of: ${validStatuses.join(", ")}` },
-        { status: 400 }
-      );
-    }
-
-    // If verifying, require verificationSource
-    if ((status === "Verified" || status === "Active") && !verificationSource) {
+    // If verifying, require statutory verificationSource
+    if (status === "Verified" && !verificationSource) {
       return NextResponse.json(
         {
           error: "Verification Source Mandatory",
@@ -60,41 +44,40 @@ export async function POST(request: Request) {
       );
     }
 
-    const application = doctorApplicationsQueue.find((app) => app.id === applicationId);
-    if (!application) {
+    const updatedApp = await db.doctorApplications.updateStatus(
+      applicationId,
+      status,
+      verificationSource,
+      session.name || "Administrator",
+      reviewNotes
+    );
+
+    if (!updatedApp) {
       return NextResponse.json(
-        { error: "Not Found", message: `Application ${applicationId} not found in verification queue.` },
+        { error: "Not Found", message: `Application ${applicationId} not found in database.` },
         { status: 404 }
       );
     }
 
-    const previousStatus = application.status;
-    application.status = status;
-    application.reviewedBy = actor.name;
-    application.reviewedAt = new Date().toISOString();
-    application.verificationSource = verificationSource || application.verificationSource;
-    application.reviewNotes = reviewNotes || application.reviewNotes;
-
     recordAuditLog({
-      actorId: actor.id,
-      actorRole: actor.role,
-      action: "DOCTOR_VERIFICATION_STATE_CHANGE",
-      targetId: application.id,
+      actorId: session.id,
+      actorRole: session.role,
+      action: `DOCTOR_VERIFICATION_${status.toUpperCase().replace(/\s+/g, "_")}`,
+      targetId: applicationId,
       targetType: "DoctorApplication",
-      details: `Doctor ${application.legalName} (${application.registrationNumber}) status transitioned from '${previousStatus}' to '${status}' by reviewer ${actor.name}. Source: ${application.verificationSource || "N/A"}. Notes: ${application.reviewNotes || "None"}`,
+      details: `RMP status transitioned to '${status}' by ${session.name}. Source: ${verificationSource || "N/A"}. Notes: ${reviewNotes || "None"}`,
     });
 
     return NextResponse.json({
       success: true,
-      applicationId: application.id,
-      doctorName: application.legalName,
-      status: application.status,
-      reviewedBy: application.reviewedBy,
-      reviewedAt: application.reviewedAt,
-      verificationSource: application.verificationSource,
-      message: `Doctor verification updated to '${status}'. Audit entry permanently logged.`,
+      message: `Doctor application ${applicationId} successfully updated to '${status}'.`,
+      application: updatedApp,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: "Internal Error", message: err.message }, { status: 500 });
+    console.error("Doctor verification API error:", err);
+    return NextResponse.json(
+      { error: "Verification Error", message: "Could not process verification decision." },
+      { status: 500 }
+    );
   }
 }

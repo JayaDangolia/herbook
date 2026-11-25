@@ -51,8 +51,9 @@ export const PostCommentsDrawer: React.FC<PostCommentsDrawerProps> = ({
   };
 
   const handleReplyClick = (comm: SocialComment) => {
-    setReplyingTo({ username: comm.username, commentId: comm.id });
-    setCommentText(`@${comm.username} `);
+    const targetHandle = comm.username || comm.authorHandle || "user";
+    setReplyingTo({ username: targetHandle, commentId: comm.id });
+    setCommentText(`@${targetHandle} `);
     setTimeout(() => {
       inputRef.current?.focus();
     }, 50);
