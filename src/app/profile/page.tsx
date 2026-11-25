@@ -175,56 +175,9 @@ export default function ProfilePage() {
     );
   }
 
-  // 2. Unauthenticated State (Prompt to Sign In / Register)
+  // 2. Unauthenticated State: Redirect to standalone login
   if (!user) {
-    return (
-      <div className="max-w-md mx-auto px-4 py-8 space-y-6 animate-fadeIn pb-24 text-center">
-        <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-brand-rose via-brand-plum to-brand-plum-dark text-white flex items-center justify-center mx-auto shadow-soft ring-4 ring-brand-rose/20">
-          <Shield className="w-9 h-9" />
-        </div>
-
-        <div className="space-y-2">
-          <h1 className="text-2xl font-extrabold text-zinc-900 dark:text-white font-display">
-            Your Private Health Profile
-          </h1>
-          <p className="text-xs text-zinc-600 dark:text-zinc-400 max-w-sm mx-auto leading-relaxed">
-            Create an independent account to track your menstrual cycles, log symptoms, store confidential lab reports, and consult verified doctors.
-          </p>
-        </div>
-
-        <div className="p-4 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 shadow-soft space-y-3 max-w-sm mx-auto text-left">
-          <div className="flex items-center space-x-2.5 text-xs text-zinc-700 dark:text-zinc-300">
-            <span className="w-2 h-2 rounded-full bg-brand-rose shrink-0" />
-            <span><strong>Multi-User Isolation:</strong> Health records are private to you.</span>
-          </div>
-          <div className="flex items-center space-x-2.5 text-xs text-zinc-700 dark:text-zinc-300">
-            <span className="w-2 h-2 rounded-full bg-brand-rose shrink-0" />
-            <span><strong>DPDP Act 2023:</strong> Full rights to export or erase your data.</span>
-          </div>
-          <div className="flex items-center space-x-2.5 text-xs text-zinc-700 dark:text-zinc-300">
-            <span className="w-2 h-2 rounded-full bg-brand-rose shrink-0" />
-            <span><strong>RMP Telemedicine:</strong> End-to-end encrypted video consults.</span>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2.5 max-w-sm mx-auto pt-2">
-          <button
-            onClick={() => openAuthModal("register")}
-            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-brand-rose to-brand-plum text-white font-bold text-xs shadow-soft hover:shadow-glow transition-all flex items-center justify-center space-x-2 cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Create Free Account</span>
-          </button>
-          <button
-            onClick={() => openAuthModal("login")}
-            className="w-full py-3.5 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-bold text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700/60 transition-all flex items-center justify-center space-x-2 cursor-pointer"
-          >
-            <LogIn className="w-4 h-4" />
-            <span>Sign In to Existing Account</span>
-          </button>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   // 3. Authenticated Real User Profile

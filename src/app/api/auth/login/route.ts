@@ -5,21 +5,24 @@ import { db, verifyPassword } from "@/lib/db";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, password } = body;
+    const identifier = (body.identifier || body.email || body.username || "").toLowerCase().trim().replace(/^@/, "");
+    const { password } = body;
 
-    if (!email || !password) {
+    if (!identifier || !password) {
       return NextResponse.json(
-        { error: "Validation Error", message: "Email and password are required." },
+        { error: "Validation Error", message: "Email or username and password are required." },
         { status: 400 }
       );
     }
 
-    const cleanEmail = email.toLowerCase().trim();
-    const user = await db.users.findByEmail(cleanEmail);
+    let user = await db.users.findByEmail(identifier);
+    if (!user) {
+      user = await db.users.findByUsername(identifier);
+    }
 
     if (!user) {
       return NextResponse.json(
-        { error: "Authentication Failed", message: "Invalid email or password." },
+        { error: "Authentication Failed", message: "Invalid email/username or password." },
         { status: 401 }
       );
     }

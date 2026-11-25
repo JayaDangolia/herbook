@@ -162,13 +162,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // Real Login
-  const login = async (email: string, pass: string) => {
+  // Real Login (supports email or username)
+  const login = async (identifier: string, pass: string) => {
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password: pass }),
+        body: JSON.stringify({
+          identifier: identifier.trim(),
+          email: identifier.trim(),
+          password: pass,
+        }),
       });
       const data = await res.json();
       if (res.ok && data.success && data.user) {
@@ -208,13 +212,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // Real Logout
+  // Real Logout - terminates session and redirects cleanly to /login
   const logout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
       setUser(null);
       showNotification("You have been logged out.");
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
     }
   };
 

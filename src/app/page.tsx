@@ -43,8 +43,8 @@ export default function HomePage() {
   const handleAddComment = (postId: string, text: string) => {
     const newComment = {
       id: `comm-${Date.now()}`,
-      username: "rhea_deshmukh",
-      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80",
+      username: user?.username || "user",
+      avatar: user?.avatarUrl || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&auto=format&fit=crop&q=80",
       text,
       timestamp: "Just now",
       likes: 0,
